@@ -11,24 +11,34 @@ using namespace std;
 
 
 TofSampler::TofSampler(int sampleSize, int avgCount, int height, int width, int maxDistance) :
-        _sampleSize(sampleSize), _avgCount(avgCount), _height(height), _width(width), _maxDistance(maxDistance)
+        _sampleSize(sampleSize), _avgCount(avgCount), _height(height), _width(width),
+        _maxDistance(maxDistance), _running(false)
 {
   _sampleAvg = _sampleSize ^ 2;
   _sampleHeight = _height / _sampleSize;
   _sampleWidth = _width / _sampleSize;
 
-  _depthRunning = new float(height * width);
-  _amplitudeRunning = new float(height * width);
+  _depthRunning = new float[height * width];
+  _amplitudeRunning = new float[height * width];
 
-  _depthSample = new float(_sampleHeight * _sampleWidth);
-  _amplitudeSample = new float(_sampleHeight * _sampleWidth);
+  _depthSample = new float[_sampleHeight * _sampleWidth];
+  _amplitudeSample = new float[_sampleHeight * _sampleWidth];
   
-  _previewPtr = new uint8_t(_sampleHeight * _sampleWidth);
+  _previewPtr = new uint8_t[_sampleHeight * _sampleWidth];
+  
+  clog << "Initialized Sampler: " << endl;
+  clog << "\tSampleSize: " << sampleSize << endl;
+  clog << "\tAverage Count: " << avgCount << endl;
+  clog << "\tHeight: " << height << endl;
+  clog << "\tWidth: " << width << endl;
+  clog << "\tMaxDistance: " << maxDistance << endl;
 }
 
 
 TofSampler::~TofSampler()
 {
+  clog << "Destring TofSampler" << endl;
+  
   delete [] _depthRunning;
   delete [] _amplitudeRunning;
   delete [] _depthSample;
@@ -38,12 +48,14 @@ TofSampler::~TofSampler()
 
 void TofSampler::RegisterHandler(SampleHandler* handler)
 {
+  clog << "Registering handler: " << handler->HandlerName() << endl;
   _handlers.push_back(handler);
 }
 
 
 void TofSampler::ClearSamples()
 {
+  clog << "Clearing Samples" << endl;
   memset(_depthRunning, 0.0f, sizeof(float) * _height * _width);
   memset(_amplitudeRunning, 0.0f, sizeof(float) * _height * _width);
 }
@@ -51,6 +63,8 @@ void TofSampler::ClearSamples()
 
 void TofSampler::LoadSamples()
 {
+  clog << "Loading Samples" << endl;
+  
   int count = 0;
   ArducamFrameBuffer *frame;
   
@@ -79,6 +93,8 @@ void TofSampler::LoadSamples()
 
 void TofSampler::CalculateSamples()
 {
+  clog << "Calculating Samples" << endl;
+  
   for (int row = 0; row < _sampleHeight; row++) {
     for (int col = 0; col < _sampleWidth; col++) {
       // This is where we do our small rectangle averaging
@@ -102,20 +118,47 @@ void TofSampler::CalculateSamples()
 
 void TofSampler::SupplySamplesToHandlers()
 {
+  clog << "Applying sample handlers" << endl;
+  
   for (auto iter = _handlers.begin(); iter != _handlers.end(); ++iter)
   {
+    clog << "Applying handler: " << (*iter)->HandlerName() << endl;
     (*iter)->HandleSampleData(this);
   }
 }
 
 
+int TofSampler::Height() const { return _height; }
+int TofSampler::Width() const { return _width; }
+int TofSampler::SampleSize() const { return _sampleSize; }
+int TofSampler::GetMaxDistance() const { return _maxDistance; }
+float* TofSampler::GetDepthPtr() { return _depthSample; }
+float* TofSampler::GetAmplitudePtr() { return _amplitudeSample; }
+
+float TofSampler::GetDepthValue(int row, int col) const
+{
+  return _depthSample[row * _sampleHeight + col];
+}
+
+float TofSampler::GetAmplitudeValue(int row, int col) const
+{
+  return _amplitudeSample[row * _sampleHeight + col];
+}
+
+
+
 void TofSampler::Capture()
 {
-  ClearSamples();
-  LoadSamples();  
-  CalculateSamples();
+  clog << "Starting capture" << endl;
+  _running = true;
   
-  SupplySamplesToHandlers();
+  while (_running)
+  {    
+    ClearSamples();
+    LoadSamples();  
+    CalculateSamples();
+    SupplySamplesToHandlers();
+  }
   //RenderSample();
   
   
@@ -148,6 +191,14 @@ void TofSampler::Capture()
 
 void TofSampler::Start()
 {
+  if (_running)
+  {
+    clog << "Cannot start sampler, already running" << endl;
+    return;
+  }
+  
+  
+  clog << "Starting Sampler" << endl;
   if (_tof.init(Connection::CSI))
   {
       std::cerr << "initialization failed" << std::endl;

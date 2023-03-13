@@ -9,6 +9,7 @@ class SampleHandler;
 class TofSampler
 {
   private:
+    bool _running;
     int _sampleSize;
     int _avgCount;
     int _height;
@@ -30,8 +31,19 @@ class TofSampler
     ~TofSampler();
 
     void Start();
+    void Stop();
     void Capture();
     void RegisterHandler(SampleHandler* handler);
+    
+    int Height() const;
+    int Width() const;
+    int SampleSize() const;
+    int GetMaxDistance() const;
+    float GetDepthValue(int row, int col) const;
+    float GetAmplitudeValue(int row, int col) const;
+    float* GetDepthPtr();
+    float* GetAmplitudePtr();
+    
     
   private:
     void ClearSamples();
