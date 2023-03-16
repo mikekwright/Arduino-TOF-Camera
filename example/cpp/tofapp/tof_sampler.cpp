@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cstring>
 
+
 #include "ArducamTOFCamera.hpp"
 #include "tof_sampler.hpp"
 #include "sample_handler.hpp"
@@ -9,41 +10,45 @@
 using namespace Arducam;
 using namespace std;
 
+#define HEIGHT 180
+#define WIDTH 240
 
-TofSampler::TofSampler(int sampleSize, int avgCount, int height, int width, int maxDistance) :
-        _sampleSize(sampleSize), _avgCount(avgCount), _height(height), _width(width),
-        _maxDistance(maxDistance), _running(false)
+// This can be either 2 or 4, 2 is 2 meters and 4 is 4 meters (range)
+//    NOTE: For some reason when run with 2 meters get some odd results
+#define MAX_DISTANCE 4
+
+
+TofSampler::TofSampler(int pixelBinningSize, int numFramesToIntegrate) :
+        _pixelBinningSize(pixelBinningSize), 
+        _numberOfFramesToIntegrate(numFramesToIntegrate), 
+        _height(HEIGHT), _width(WIDTH), _maxDistance(MAX_DISTANCE),
+        _running(false)
 {
-  _sampleAvg = _sampleSize ^ 2;
-  _sampleHeight = _height / _sampleSize;
-  _sampleWidth = _width / _sampleSize;
+  _sampleAvg = _pixelBinningSize * _pixelBinningSize;
+  _sampleHeight = _height / _pixelBinningSize;
+  _sampleWidth = _width / _pixelBinningSize;
 
-  _depthRunning = new float[height * width];
-  _amplitudeRunning = new float[height * width];
+  _depthRunning = new float[_height * _width];
+  _amplitudeRunning = new float[_height * _width];
 
   _depthSample = new float[_sampleHeight * _sampleWidth];
-  _amplitudeSample = new float[_sampleHeight * _sampleWidth];
-  
-  _previewPtr = new uint8_t[_sampleHeight * _sampleWidth];
+  _amplitudeSample = new float[_sampleHeight * _sampleWidth];  
   
   clog << "Initialized Sampler: " << endl;
-  clog << "\tSampleSize: " << sampleSize << endl;
-  clog << "\tAverage Count: " << avgCount << endl;
-  clog << "\tHeight: " << height << endl;
-  clog << "\tWidth: " << width << endl;
-  clog << "\tMaxDistance: " << maxDistance << endl;
+  clog << "\tSampleSize: " << _pixelBinningSize << endl;
+  clog << "\tAverage Count: " << _numberOfFramesToIntegrate << endl;
+  clog << "\tHeight: " << _height << endl;
+  clog << "\tWidth: " << _width << endl;
+  clog << "\tMaxDistance: " << _maxDistance << endl;
 }
 
 
 TofSampler::~TofSampler()
-{
-  clog << "Destring TofSampler" << endl;
-  
+{  
   delete [] _depthRunning;
   delete [] _amplitudeRunning;
   delete [] _depthSample;
   delete [] _amplitudeSample;
-  delete [] _previewPtr;
 }
 
 void TofSampler::RegisterHandler(SampleHandler* handler)
@@ -71,6 +76,11 @@ void TofSampler::LoadSamples()
   float* depthPtr;
   float* amplitudePtr;
 
+  for (int i = 0; i < (_height * _width); ++i) {
+    _depthRunning[i] = 0.0f;
+    _amplitudeRunning[i] = 0.0f;
+  }
+
   do
   {
     frame = _tof.requestFrame(200);
@@ -87,7 +97,7 @@ void TofSampler::LoadSamples()
       }
     }
     _tof.releaseFrame(frame);
-  } while (count++ < this->_avgCount);  
+  } while (++count < this->_numberOfFramesToIntegrate);
 }
 
 
@@ -98,13 +108,13 @@ void TofSampler::CalculateSamples()
   for (int row = 0; row < _sampleHeight; row++) {
     for (int col = 0; col < _sampleWidth; col++) {
       // This is where we do our small rectangle averaging
-      int largeRow = row * _sampleSize;
-      int largeCol = col * _sampleSize;
+      int largeRow = row * _pixelBinningSize;
+      int largeCol = col * _pixelBinningSize;
 
       float depthValue = 0.0f;
       float ampValue = 0.0f;
-      for (int lr = largeRow; lr < largeRow + _sampleSize; lr++) {
-        for (int lc = largeCol; lc < largeCol + _sampleSize; lc++) {
+      for (int lr = largeRow; lr < (largeRow + _pixelBinningSize); lr++) {
+        for (int lc = largeCol; lc < (largeCol + _pixelBinningSize); lc++) {
           depthValue += _depthRunning[(lr * _width) + lc];
           ampValue += _amplitudeRunning[(lr * _width) + lc];
         }
@@ -114,6 +124,8 @@ void TofSampler::CalculateSamples()
       _amplitudeSample[(row * _sampleWidth) + col] = ampValue / _sampleAvg;
     }
   }
+  
+  clog << "ds: " << _depthSample[0] << endl;
 }
 
 void TofSampler::SupplySamplesToHandlers()
@@ -128,66 +140,55 @@ void TofSampler::SupplySamplesToHandlers()
 }
 
 
-int TofSampler::Height() const { return _height; }
-int TofSampler::Width() const { return _width; }
-int TofSampler::SampleSize() const { return _sampleSize; }
+int TofSampler::Height() const { return _sampleHeight; }
+int TofSampler::Width() const { return _sampleWidth; }
+int TofSampler::SampleSize() const { return _pixelBinningSize; }
 int TofSampler::GetMaxDistance() const { return _maxDistance; }
 float* TofSampler::GetDepthPtr() { return _depthSample; }
 float* TofSampler::GetAmplitudePtr() { return _amplitudeSample; }
 
 float TofSampler::GetDepthValue(int row, int col) const
 {
-  return _depthSample[row * _sampleHeight + col];
+  return _depthSample[(row * _sampleHeight) + col];
 }
 
 float TofSampler::GetAmplitudeValue(int row, int col) const
 {
-  return _amplitudeSample[row * _sampleHeight + col];
+  return _amplitudeSample[(row * _sampleHeight) + col];
 }
 
 
 
-void TofSampler::Capture()
+void TofSampler::Capture(int count)
 {
   clog << "Starting capture" << endl;
   _running = true;
   
-  while (_running)
-  {    
+  int runningCount = 0;
+  
+  do
+  {
     ClearSamples();
     LoadSamples();  
     CalculateSamples();
     SupplySamplesToHandlers();
-  }
-  //RenderSample();
-  
-  
-  // for (int row = 0; row < SAMPLE_HEIGHT; row++) {
-  //   for (int col = 0; col < SAMPLE_WIDTH; col++) {
-  //     // This is where we do our small rectangle averaging
-  //     int large_row = row * SAMPLE_SIZE;
-  //     int large_col = col * SAMPLE_SIZE;
-
-  //     float depth_value = 0.0f;
-  //     float amp_value = 0.0f;
-  //     for (int lr = large_row; lr < large_row + SAMPLE_SIZE; lr++) {
-  //       for (int lc = large_col; lc < large_col + SAMPLE_SIZE; lc++) {
-  //         depth_value += depth_running[(lr * WIDTH) + lc];
-  //         amp_value += amplitude_running[(lr * WIDTH) + lc];
-  //       }
-  //     }
-
-  //     depth_sample[(row * SAMPLE_WIDTH) + col] = depth_value / SAMPLE_AVG;
-  //     amplitude_sample[(row * SAMPLE_WIDTH) + col] = amp_value / SAMPLE_AVG;
-  //   }
-  // }
-
-  // //depth_ptr = depth_running;
-  // depth_ptr = depth_sample;
-  // //amplitude_ptr = amplitude_running;
-  // amplitude_ptr = amplitude_sample;
+    
+    if (count != 0 && ++runningCount == count) {
+      _running = false;
+    }      
+  } while (_running);
 }
 
+bool TofSampler::Stop()
+{
+  _running = false;
+  
+  if (_tof.stop()) {
+    return false;
+  }
+  
+  return true;
+}
 
 void TofSampler::Start()
 {
@@ -217,5 +218,4 @@ void TofSampler::Start()
   memset(_amplitudeRunning, 0.0f, sizeof(float) * _height * _width);
   memset(_depthSample, 0.0f, sizeof(float) * _sampleHeight * _sampleWidth);
   memset(_amplitudeSample, 0.0f, sizeof(float) * _sampleHeight * _sampleWidth);
-  memset(_previewPtr, 0, sizeof(uint8_t) * _sampleHeight * _sampleWidth);
 }

@@ -5,6 +5,7 @@
 #include <chrono>
 #include <iostream>
 #include <fstream>
+#include <iomanip>
 
 #include "tof_sampler.hpp"
 
@@ -16,8 +17,8 @@ using namespace std;
 #define HEIGHT 180
 #define WIDTH 240
 
-#define SAMPLE_SIZE 6
-#define AVG_COUNT 10
+#define SAMPLE_SIZE 16
+#define AVG_COUNT 1
 
 #define SAMPLE_AVG (SAMPLE_SIZE * SAMPLE_SIZE)
 #define SAMPLE_HEIGHT HEIGHT / SAMPLE_SIZE
@@ -99,10 +100,6 @@ int main(int argc, char* argv[])
         use_csv = true;
       }
     }
-    
-    TofSampler x(1, 2, 3, 4, 5);
-
-
 
     ArducamTOFCamera tof;
     ArducamFrameBuffer *frame;
@@ -125,7 +122,7 @@ int main(int argc, char* argv[])
     float *amplitude_ptr;
     uint8_t *preview_ptr = new uint8_t[SAMPLE_HEIGHT * SAMPLE_WIDTH];
     cv::namedWindow("preview", cv::WINDOW_AUTOSIZE);
-    cv::setMouseCallback("preview", onMouse);
+    //cv::setMouseCallback("preview", onMouse);
 
     float depth_running[HEIGHT * WIDTH];
     float amplitude_running[HEIGHT * WIDTH];
@@ -141,98 +138,99 @@ int main(int argc, char* argv[])
     ofstream csv("output.csv");
 
     int count = 0;
-    int framecount = 0;
-    for (;;)
-    {
-        count += 1;	
-        frame = tof.requestFrame(200);
-        if (frame != nullptr)
+    int max_count = 5;    
+    
+    for (int i = 0; i < max_count; ++i)
+    {     
+        // Grab a total number of frames for AVG_COUNT   
+        do
         {
-            depth_ptr = (float *)frame->getData(FrameType::DEPTH_FRAME);
-            amplitude_ptr = (float *)frame->getData(FrameType::AMPLITUDE_FRAME);
-            // Is this memory being freed?
-
-            // Add to common pool
-            for (int i = 0; i < (HEIGHT * WIDTH); ++i) {
-              depth_running[i] += depth_ptr[i];
-              amplitude_running[i] += amplitude_ptr[i];
+            count += 1;	
+            frame = tof.requestFrame(200);
+            if (frame != nullptr)
+            {
+                depth_ptr = (float *)frame->getData(FrameType::DEPTH_FRAME);
+                amplitude_ptr = (float *)frame->getData(FrameType::AMPLITUDE_FRAME);
+                // Is this memory being freed?
+                
+                // Add to common pool
+                for (int i = 0; i < (HEIGHT * WIDTH); ++i) {
+                  depth_running[i] += depth_ptr[i];
+                  amplitude_running[i] += amplitude_ptr[i];
+                }                
             }
+            tof.releaseFrame(frame);           
+        } while (count < AVG_COUNT);
+
+
+        // Bin the values to make a smaller grouping
+        for (int row = 0; row < SAMPLE_HEIGHT; row++) {
+          for (int col = 0; col < SAMPLE_WIDTH; col++) {
+            // This is where we do our small rectangle averaging
+            int large_row = row * SAMPLE_SIZE;
+            int large_col = col * SAMPLE_SIZE;
+
+            float depth_value = 0.0f;
+            float amp_value = 0.0f;
+            for (int lr = large_row; lr < large_row + SAMPLE_SIZE; lr++) {
+              for (int lc = large_col; lc < large_col + SAMPLE_SIZE; lc++) {
+                depth_value += depth_running[(lr * WIDTH) + lc];
+                amp_value += amplitude_running[(lr * WIDTH) + lc];
+              } 
+            }
+
+            depth_sample[(row * SAMPLE_WIDTH) + col] = depth_value / SAMPLE_AVG;
+            amplitude_sample[(row * SAMPLE_WIDTH) + col] = amp_value / SAMPLE_AVG;
+          }
+        }                    
+
+        //depth_ptr = depth_running;
+        depth_ptr = depth_sample;
+        //amplitude_ptr = amplitude_running;
+        amplitude_ptr = amplitude_sample;
+
+        csv << std::fixed << std::setprecision(2);
+        csv << "csv";
+        for (int row = 0; row < SAMPLE_HEIGHT; ++row) {
+            for (int col = 0; col < SAMPLE_WIDTH; ++col) {
+                csv << "," << depth_ptr[row * SAMPLE_HEIGHT + col];
+            }            
         }
-        tof.releaseFrame(frame);
+        csv << endl;
+        
+        cout << "Sharing OpenCV image" << endl;
+        getPreview(preview_ptr, depth_ptr, amplitude_ptr);
 
-        if (count > AVG_COUNT) {
-            for (int row = 0; row < SAMPLE_HEIGHT; row++) {
-              for (int col = 0; col < SAMPLE_WIDTH; col++) {
-                // This is where we do our small rectangle averaging
-                int large_row = row * SAMPLE_SIZE;
-                int large_col = col * SAMPLE_SIZE;
+        cv::Mat result_frame(SAMPLE_HEIGHT, SAMPLE_WIDTH, CV_8U, preview_ptr);
+        cv::Mat depth_frame(SAMPLE_HEIGHT, SAMPLE_WIDTH, CV_32F, depth_ptr);
+        cv::Mat amplitude_frame(SAMPLE_HEIGHT, SAMPLE_WIDTH, CV_32F, amplitude_ptr);
 
-                float depth_value = 0.0f;
-                float amp_value = 0.0f;
-                for (int lr = large_row; lr < large_row + SAMPLE_SIZE; lr++) {
-                  for (int lc = large_col; lc < large_col + SAMPLE_SIZE; lc++) {
-                    depth_value += depth_running[(lr * WIDTH) + lc];
-                    amp_value += amplitude_running[(lr * WIDTH) + lc];
-                  } 
-                }
+        depth_frame = matRotateClockWise180(depth_frame);
+        result_frame = matRotateClockWise180(result_frame);
+        amplitude_frame = matRotateClockWise180(amplitude_frame);
+        
+        cv::applyColorMap(result_frame, result_frame, cv::COLORMAP_JET);
+        amplitude_frame.convertTo(amplitude_frame, CV_8U, 255.0 / 1024, 0);
+        cv::imshow("amplitude", amplitude_frame);
+        //cv::rectangle(result_frame, seletRect, cv::Scalar(0, 0, 0), 2);
+        //cv::rectangle(result_frame, followRect, cv::Scalar(255, 255, 255), 1);
 
-                depth_sample[(row * SAMPLE_WIDTH) + col] = depth_value / SAMPLE_AVG;
-                amplitude_sample[(row * SAMPLE_WIDTH) + col] = amp_value / SAMPLE_AVG;
-              }
-            }
+        //std::cout << "select Rect distance: " << cv::mean(depth_frame(seletRect)).val[0] << std::endl;
 
-            //depth_ptr = depth_running;
-            depth_ptr = depth_sample;
-            //amplitude_ptr = amplitude_running;
-            amplitude_ptr = amplitude_sample;
+        cv::imshow("preview", result_frame);
+        
+        if (cv::waitKey(1) == 27) {
+          if (tof.stop()) {
+            exit(-1);
+          }
 
-            if (use_csv) {
-              cout << "Outputting CSV frame: " << framecount << endl;
-              for (int row = 0; row < SAMPLE_HEIGHT; ++row) {
-                csv << framecount << "," << row;
-                for (int col = 0; col < SAMPLE_WIDTH; ++col) {
-                  csv << "," << depth_ptr[row * SAMPLE_HEIGHT + col];
-                }
-                csv << endl;
-              }
-              framecount += 1;
-            }
-            else {
-              cout << "Sharing OpenCV image" << endl;
-                    getPreview(preview_ptr, depth_ptr, amplitude_ptr);
-
-                    cv::Mat result_frame(SAMPLE_HEIGHT, SAMPLE_WIDTH, CV_8U, preview_ptr);
-                    cv::Mat depth_frame(SAMPLE_HEIGHT, SAMPLE_WIDTH, CV_32F, depth_ptr);
-                    cv::Mat amplitude_frame(SAMPLE_HEIGHT, SAMPLE_WIDTH, CV_32F, amplitude_ptr);
-
-                    depth_frame = matRotateClockWise180(depth_frame);
-                    result_frame = matRotateClockWise180(result_frame);
-                    amplitude_frame = matRotateClockWise180(amplitude_frame);
-                    
-                    cv::applyColorMap(result_frame, result_frame, cv::COLORMAP_JET);
-                    amplitude_frame.convertTo(amplitude_frame, CV_8U, 255.0 / 1024, 0);
-                    cv::imshow("amplitude", amplitude_frame);
-                    cv::rectangle(result_frame, seletRect, cv::Scalar(0, 0, 0), 2);
-                    cv::rectangle(result_frame, followRect, cv::Scalar(255, 255, 255), 1);
-
-                    std::cout << "select Rect distance: " << cv::mean(depth_frame(seletRect)).val[0] << std::endl;
-
-                    cv::imshow("preview", result_frame);
-            }
-
-            if (cv::waitKey(1) == 27) {
-              if (tof.stop()) {
-                exit(-1);
-              }
-
-              exit(0);
-            }
-            display_fps();
-
-            memset(depth_running, 0.0f, sizeof(depth_running));
-            memset(amplitude_running, 0.0f, sizeof(amplitude_running));
-            count = 0;
+          exit(0);          
         }
+        
+        display_fps();
+        memset(depth_running, 0.0f, sizeof(depth_running));
+        memset(amplitude_running, 0.0f, sizeof(amplitude_running));
+        count = 0;
     }
 
     if (tof.stop())

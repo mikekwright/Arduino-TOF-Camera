@@ -10,8 +10,8 @@ class TofSampler
 {
   private:
     bool _running;
-    int _sampleSize;
-    int _avgCount;
+    int _pixelBinningSize;
+    int _numberOfFramesToIntegrate;
     int _height;
     int _width;
     int _maxDistance;
@@ -22,17 +22,16 @@ class TofSampler
     float* _amplitudeRunning;
     float* _depthSample;
     float* _amplitudeSample;
-    uint8_t* _previewPtr;
     Arducam::ArducamTOFCamera _tof;
     std::vector<SampleHandler*> _handlers;
 
   public:
-    TofSampler(int sampleSize, int avgCount, int height, int width, int maxDistance);
+    TofSampler(int pixelBinningSize, int numFramesToIntegrate);
     ~TofSampler();
 
     void Start();
-    void Stop();
-    void Capture();
+    bool Stop();
+    void Capture(int count = 0);
     void RegisterHandler(SampleHandler* handler);
     
     int Height() const;

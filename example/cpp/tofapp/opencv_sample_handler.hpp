@@ -15,7 +15,7 @@ class OpenCVSampleHandler : public SampleHandler
     uint8_t* _previewPtr;
 	
   public:
-    OpenCVSampleHandler(int width, int height, int sampleSize);
+    OpenCVSampleHandler(int sampleSize);
     ~OpenCVSampleHandler();
     void HandleSampleData(TofSampler *sampler);
     std::string HandlerName() const;

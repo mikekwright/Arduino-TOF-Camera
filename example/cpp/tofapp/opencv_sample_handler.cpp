@@ -5,16 +5,19 @@
 
 #include "opencv_sample_handler.hpp"
 
+#define HEIGHT 180
+#define WIDTH 240
 
 using namespace std;
+
 
 void getPreview(uint8_t *preview_ptr, float *phase_image_ptr, float *amplitude_image_ptr,
     int sampleWidth, int sampleHeight, int maxDistance);
 cv::Mat matRotateClockWise180(cv::Mat src);
 
 
-OpenCVSampleHandler::OpenCVSampleHandler(int width, int height, int sampleSize) :
-	_width(width), _height(height), _sampleSize(sampleSize)
+OpenCVSampleHandler::OpenCVSampleHandler(int sampleSize) :
+	_width(WIDTH), _height(HEIGHT), _sampleSize(sampleSize)
 {
   cv::namedWindow("preview", cv::WINDOW_AUTOSIZE);
   
@@ -50,12 +53,17 @@ void OpenCVSampleHandler::HandleSampleData(TofSampler *sampler)
   cv::applyColorMap(result_frame, result_frame, cv::COLORMAP_JET);
   amplitude_frame.convertTo(amplitude_frame, CV_8U, 255.0 / 1024, 0);
   cv::imshow("amplitude", amplitude_frame);
-  //cv::rectangle(result_frame, seletRect, cv::Scalar(0, 0, 0), 2);
-  //cv::rectangle(result_frame, followRect, cv::Scalar(255, 255, 255), 1);
 
-  //clog << "select Rect distance: " << cv::mean(depth_frame(seletRect)).val[0] << std::endl;
   clog << "Rendering preview" << endl;
   cv::imshow("preview", result_frame);
+  
+  if (cv::waitKey(1) == 27) {
+	//if (tof.stop()) {
+    //  exit(-1);
+    //}
+
+    sampler->Stop();          
+  }
 }
 
 
