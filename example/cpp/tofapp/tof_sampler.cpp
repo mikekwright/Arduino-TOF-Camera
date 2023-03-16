@@ -21,24 +21,24 @@ using namespace std;
 TofSampler::TofSampler(int pixelBinningSize, int numFramesToIntegrate) :
         _pixelBinningSize(pixelBinningSize), 
         _numberOfFramesToIntegrate(numFramesToIntegrate), 
-        _height(HEIGHT), _width(WIDTH), _maxDistance(MAX_DISTANCE),
+        _maxDistance(MAX_DISTANCE),
         _running(false)
 {
   _sampleAvg = _pixelBinningSize * _pixelBinningSize;
-  _sampleHeight = _height / _pixelBinningSize;
-  _sampleWidth = _width / _pixelBinningSize;
+  _sampleHeight = HEIGHT / _pixelBinningSize;
+  _sampleWidth = WIDTH / _pixelBinningSize;
 
-  _depthRunning = new float[_height * _width];
-  _amplitudeRunning = new float[_height * _width];
+  _depthRunning = new float[HEIGHT * WIDTH];
+  _amplitudeRunning = new float[HEIGHT * WIDTH];
 
   _depthSample = new float[_sampleHeight * _sampleWidth];
   _amplitudeSample = new float[_sampleHeight * _sampleWidth];  
   
   clog << "Initialized Sampler: " << endl;
-  clog << "\tSampleSize: " << _pixelBinningSize << endl;
-  clog << "\tAverage Count: " << _numberOfFramesToIntegrate << endl;
-  clog << "\tHeight: " << _height << endl;
-  clog << "\tWidth: " << _width << endl;
+  clog << "\tPixel Bin Size: " << _pixelBinningSize << endl;
+  clog << "\tFrames to Integrate: " << _numberOfFramesToIntegrate << endl;
+  clog << "\tFinal Height: " << _sampleHeight << endl;
+  clog << "\tFinal Width: " << _sampleWidth << endl;
   clog << "\tMaxDistance: " << _maxDistance << endl;
 }
 
@@ -54,6 +54,7 @@ TofSampler::~TofSampler()
 void TofSampler::RegisterHandler(SampleHandler* handler)
 {
   clog << "Registering handler: " << handler->HandlerName() << endl;
+  handler->Initialize(this);
   _handlers.push_back(handler);
 }
 
@@ -61,8 +62,8 @@ void TofSampler::RegisterHandler(SampleHandler* handler)
 void TofSampler::ClearSamples()
 {
   clog << "Clearing Samples" << endl;
-  memset(_depthRunning, 0.0f, sizeof(float) * _height * _width);
-  memset(_amplitudeRunning, 0.0f, sizeof(float) * _height * _width);
+  memset(_depthRunning, 0.0f, sizeof(float) * HEIGHT * WIDTH);
+  memset(_amplitudeRunning, 0.0f, sizeof(float) * HEIGHT * WIDTH);
 }
 
 
@@ -76,7 +77,7 @@ void TofSampler::LoadSamples()
   float* depthPtr;
   float* amplitudePtr;
 
-  for (int i = 0; i < (_height * _width); ++i) {
+  for (int i = 0; i < (HEIGHT * WIDTH); ++i) {
     _depthRunning[i] = 0.0f;
     _amplitudeRunning[i] = 0.0f;
   }
@@ -91,7 +92,7 @@ void TofSampler::LoadSamples()
       // Is this memory being freed?
 
       // Add to common pool
-      for (int i = 0; i < (_height * _width); ++i) {
+      for (int i = 0; i < (HEIGHT * WIDTH); ++i) {
         _depthRunning[i] += depthPtr[i];
         _amplitudeRunning[i] += amplitudePtr[i];
       }
@@ -115,8 +116,8 @@ void TofSampler::CalculateSamples()
       float ampValue = 0.0f;
       for (int lr = largeRow; lr < (largeRow + _pixelBinningSize); lr++) {
         for (int lc = largeCol; lc < (largeCol + _pixelBinningSize); lc++) {
-          depthValue += _depthRunning[(lr * _width) + lc];
-          ampValue += _amplitudeRunning[(lr * _width) + lc];
+          depthValue += _depthRunning[(lr * WIDTH) + lc];
+          ampValue += _amplitudeRunning[(lr * WIDTH) + lc];
         }
       }
 
@@ -124,8 +125,6 @@ void TofSampler::CalculateSamples()
       _amplitudeSample[(row * _sampleWidth) + col] = ampValue / _sampleAvg;
     }
   }
-  
-  clog << "ds: " << _depthSample[0] << endl;
 }
 
 void TofSampler::SupplySamplesToHandlers()
@@ -181,6 +180,10 @@ void TofSampler::Capture(int count)
 
 bool TofSampler::Stop()
 {
+  if (_running == false) {
+    return true;
+  }
+  
   _running = false;
   
   if (_tof.stop()) {
@@ -213,9 +216,10 @@ void TofSampler::Start()
   }
 
   _tof.setControl(ControlID::RANGE, this->_maxDistance);
+  //_tof.setControl(ControlID::RANGE, 2);
 
-  memset(_depthRunning, 0.0f, sizeof(float) * _height * _width);
-  memset(_amplitudeRunning, 0.0f, sizeof(float) * _height * _width);
+  memset(_depthRunning, 0.0f, sizeof(float) * HEIGHT * WIDTH);
+  memset(_amplitudeRunning, 0.0f, sizeof(float) * HEIGHT * WIDTH);
   memset(_depthSample, 0.0f, sizeof(float) * _sampleHeight * _sampleWidth);
   memset(_amplitudeSample, 0.0f, sizeof(float) * _sampleHeight * _sampleWidth);
 }

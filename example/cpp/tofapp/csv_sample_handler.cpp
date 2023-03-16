@@ -13,6 +13,9 @@ string CsvSampleHandler::HandlerName() const
   return "CsvSampleHandler";
 }
 
+void CsvSampleHandler::Initialize(TofSampler *sampler)
+{}
+
 void CsvSampleHandler::HandleSampleData(TofSampler *sampler)
 {
   _stream << std::fixed << std::setprecision(2);

@@ -12,8 +12,6 @@ class TofSampler
     bool _running;
     int _pixelBinningSize;
     int _numberOfFramesToIntegrate;
-    int _height;
-    int _width;
     int _maxDistance;
     int _sampleAvg;
     int _sampleHeight;

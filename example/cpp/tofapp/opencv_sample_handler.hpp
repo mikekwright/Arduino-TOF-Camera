@@ -9,14 +9,15 @@ class OpenCVSampleHandler : public SampleHandler
   private:
     int _height;
     int _width;
-    int _sampleSize;
-    int _sampleHeight;
-    int _sampleWidth;
     uint8_t* _previewPtr;
 	
+	void getPreview(float *phase_image_ptr, float *amplitude_image_ptr, int maxDistance);
+	
   public:
-    OpenCVSampleHandler(int sampleSize);
+    OpenCVSampleHandler();
     ~OpenCVSampleHandler();
+    
     void HandleSampleData(TofSampler *sampler);
+    void Initialize(TofSampler *sampler);
     std::string HandlerName() const;
 };
